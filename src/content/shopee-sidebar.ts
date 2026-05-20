@@ -6,6 +6,7 @@ import { browser } from '../shared/browser-polyfill'
 import type { ExtensionMessage, ExtensionResponse, ShopeeProduct } from '../shared/types'
 import { MessageType } from '../shared/types'
 import { extractCategory } from '../shared/categories'
+import { extractCategoryFromViTitle } from '../shared/vn-translations'
 import { vndToCny } from '../shared/utils'
 
 const SIDEBAR_WIDTH = 380
@@ -16,13 +17,13 @@ let sidebarVisible = true
 
 // ---- Init ----
 async function init() {
-  if (!window.location.hostname.includes('shopee.vn')) return
+  if (!window.location.hostname.includes('shopee.vn') && !window.location.hostname.includes('localhost')) return
 
   // Wait for product data
   const product = await waitForProductData()
   if (!product) return
 
-  const category = extractCategory(product.title)
+  const category = extractCategory(product.title) || extractCategoryFromViTitle(product.title)
   if (!category) return
 
   browser.runtime.sendMessage({

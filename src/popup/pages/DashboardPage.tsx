@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SearchBar from '../components/SearchBar'
 import CustomsCard from '../components/CustomsCard'
@@ -9,6 +9,8 @@ import ReportGenerator from '../components/ReportGenerator'
 import ReportsList from '../components/ReportsList'
 import Toast from '../components/Toast'
 import { useAggregatedData } from '../hooks/useAggregatedData'
+import { browser } from '../../shared/browser-polyfill'
+import { STORAGE_KEYS } from '../../shared/constants'
 import type { Report } from '../../shared/types'
 
 export default function DashboardPage() {
@@ -18,11 +20,9 @@ export default function DashboardPage() {
   const [showReports, setShowReports] = useState(false)
 
   useEffect(() => {
-    // Check if onboarding is completed
     browser.storage.local.get(STORAGE_KEYS.UI).then((r) => {
       const ui = r[STORAGE_KEYS.UI] as { onboardingCompleted?: boolean } | undefined
       if (!ui?.onboardingCompleted) {
-        setOnboardingDone(false)
         navigate('/onboarding')
       }
     })

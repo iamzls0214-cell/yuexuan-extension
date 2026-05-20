@@ -18,17 +18,14 @@ export default defineConfig(({ mode }) => {
         shared: resolve(__dirname, 'src/shared'),
       },
     },
+    base: '',
     build: {
       outDir: `dist/${isCompat ? 'compat' : 'chrome'}`,
       emptyOutDir: true,
       rollupOptions: {
         input: {
-          // Popup entry with HTML wrapper
+          // Only build popup — background & content scripts built via esbuild for IIFE
           popup: resolve(__dirname, 'popup/index.html'),
-          // Background & content scripts as plain JS entries
-          background: resolve(__dirname, 'src/background/index.ts'),
-          'content/1688': resolve(__dirname, 'src/content/1688-sidebar.ts'),
-          'content/shopee': resolve(__dirname, 'src/content/shopee-sidebar.ts'),
         },
         output: {
           entryFileNames: '[name].js',

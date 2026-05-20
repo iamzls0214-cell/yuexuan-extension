@@ -15,8 +15,8 @@ let sidebarVisible = false
 
 // ---- Init ----
 async function init() {
-  // Only activate on product detail pages
-  if (!window.location.hostname.includes('detail.1688.com')) return
+  // Only activate on product detail pages (or localhost for dev)
+  if (!window.location.hostname.includes('detail.1688.com') && !window.location.hostname.includes('localhost')) return
 
   // Wait for product data to render
   const product = await waitForProductData()

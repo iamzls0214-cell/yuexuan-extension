@@ -68,6 +68,24 @@ export function translateToVietnamese(keyword: string): string {
 }
 
 /**
+ * 反向查找：从越南语文本中提取中文品类关键词。
+ * 用于 Shopee VN 商品页（标题是越南语）。
+ */
+export function extractCategoryFromViTitle(title: string): string {
+  const lower = title.toLowerCase()
+  // Sort by key length descending for longest match first
+  const entries = Object.entries(VI_TRANSLATIONS)
+    .filter(([, vi]) => vi.length > 0)
+    .sort((a, b) => b[0].length - a[0].length)
+  for (const [cn, vi] of entries) {
+    if (lower.includes(vi.toLowerCase())) {
+      return cn
+    }
+  }
+  return ''
+}
+
+/**
  * 导入外部翻译词库（合并覆盖）。
  */
 export function importTranslations(external: Record<string, string>): void {

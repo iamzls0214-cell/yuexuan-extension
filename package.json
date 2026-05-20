@@ -6,12 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:chrome && npm run build:compat",
-    "build:chrome": "vite build",
-    "build:compat": "vite build --mode compat",
+    "build:chrome": "vite build && node scripts/build-entries.mjs chrome && node scripts/postbuild.cjs chrome",
+    "build:compat": "vite build --mode compat && node scripts/build-entries.mjs compat && node scripts/postbuild.cjs compat",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "postbuild:chrome": "cp src/manifest.chrome.json dist/chrome/manifest.json",
-    "postbuild:compat": "cp src/manifest.compat.json dist/compat/manifest.json"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -30,6 +28,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
