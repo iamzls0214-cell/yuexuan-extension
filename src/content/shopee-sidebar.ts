@@ -14,10 +14,18 @@ const OBSERVER_TIMEOUT = 8000
 
 let sidebarRoot: ShadowRoot | null = null
 let sidebarVisible = true
+let exchangeRate = 3500
 
 // ---- Init ----
 async function init() {
   if (!window.location.hostname.includes('shopee.vn') && !window.location.hostname.includes('localhost')) return
+
+  // Load exchange rate from settings
+  try {
+    const stored = await browser.storage.local.get('settings')
+    const settings = stored.settings as { exchangeRate?: number } | undefined
+    if (settings?.exchangeRate) exchangeRate = settings.exchangeRate
+  } catch { /* use default */ }
 
   // Wait for product data
   const product = await waitForProductData()
@@ -88,7 +96,6 @@ function extractShopeeProduct(): ShopeeProduct | null {
 
   const priceText = priceEl?.textContent?.trim() || ''
   const priceVnd = parsePriceVnd(priceText)
-  const exchangeRate = 3500
 
   return {
     title,

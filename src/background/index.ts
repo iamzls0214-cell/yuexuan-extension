@@ -1,5 +1,5 @@
 import { browser } from '../shared/browser-polyfill'
-import type { ExtensionMessage, ExtensionResponse } from '../shared/types'
+import type { ExtensionMessage, ExtensionResponse, CustomsResult, Result1688, ShopeeResult, ProfitAnalysis } from '../shared/types'
 import { MessageType } from '../shared/types'
 import { verifyLicense } from './api/license'
 import { fetchCustomsData } from './api/customs'
@@ -82,10 +82,15 @@ async function handleSearchKeyword(payload: { keyword: string }): Promise<Extens
     const keyword = payload.keyword
     const keywordVi = translateToVietnamese(keyword)
 
+    // Load settings for exchange rate
+    const stored = await browser.storage.local.get('settings')
+    const settings = stored.settings as { exchangeRate?: number } | undefined
+    const exchangeRate = settings?.exchangeRate || 3500
+
     // Fetch 1688 and Shopee in parallel via fetch (service worker has no CORS)
     const [result1688, shopeeData] = await Promise.allSettled([
       fetch1688Search(keyword),
-      fetchShopeeSearch(keywordVi),
+      fetchShopeeSearch(keywordVi, exchangeRate),
     ])
 
     const real1688 = result1688.status === 'fulfilled' ? result1688.value : null
@@ -120,8 +125,144 @@ async function handleSearchKeyword(payload: { keyword: string }): Promise<Extens
 }
 
 async function handleGenerateReport(payload: { keyword: string }): Promise<ExtensionResponse> {
-  // Report generation is handled client-side in the popup
-  return { success: true }
+  try {
+    const keyword = payload.keyword
+    const keywordVi = translateToVietnamese(keyword)
+
+    // Load settings
+    const stored = await browser.storage.local.get('settings')
+    const settings = stored.settings as {
+      customsApiEndpoint?: string; customsApiKey?: string
+      exchangeRate?: number; freightCostPerKg?: number; tariffRate?: number
+    } | undefined
+    const exchangeRate = settings?.exchangeRate || 3500
+    const freightCost = settings?.freightCostPerKg || 15
+    const tariffRate = settings?.tariffRate || 0.1
+
+    // Fetch all data sources in parallel
+    const [customsResult, searchResult] = await Promise.allSettled([
+      (async () => {
+        if (settings?.customsApiKey) {
+          return fetchCustomsData(keyword, settings.customsApiEndpoint || 'https://api.customsdata.net/v1', settings.customsApiKey)
+        }
+        return generateMockSearchResult(keyword).customs
+      })(),
+      Promise.allSettled([
+        fetch1688Search(keyword),
+        fetchShopeeSearch(keywordVi, exchangeRate),
+      ]),
+    ])
+
+    const customs = customsResult.status === 'fulfilled' ? customsResult.value : null
+    const [r1688, rShopee] = searchResult.status === 'fulfilled'
+      ? [searchResult.value[0], searchResult.value[1]]
+      : [null, null]
+    const data1688 = r1688.status === 'fulfilled' ? r1688.value : null
+    const shopee = rShopee.status === 'fulfilled' ? rShopee.value : null
+
+    // Fallback to mock if all sources failed
+    if (!customs && !data1688 && !shopee) {
+      const mock = generateMockSearchResult(keyword)
+      const report = buildMarkdownReport(keyword, mock.customs, mock.result1688, mock.shopee, mock.profit)
+      return { success: true, data: { content: report, _mock: true } }
+    }
+
+    // Calculate profit
+    const costPrice = data1688?.priceMedian || 0
+    const shopeeMedianCny = shopee?.priceMedianCny || 0
+    const totalCost = costPrice + freightCost + costPrice * tariffRate
+    const grossProfit = shopeeMedianCny - totalCost
+    const grossMargin = shopeeMedianCny > 0 ? (grossProfit / shopeeMedianCny) * 100 : 0
+
+    const profit = { costPrice, exchangeRate, freightCost, tariffCost: costPrice * tariffRate, totalCost, shopeePrice: shopeeMedianCny, grossProfit, grossMargin, rating: grossMargin > 40 ? 'high' as const : grossMargin > 20 ? 'medium' as const : 'low' as const }
+
+    const report = buildMarkdownReport(keyword, customs, data1688, shopee, profit)
+    return { success: true, data: { content: report } }
+  } catch (err) {
+    return { success: false, error: `报告生成失败: ${(err as Error).message}` }
+  }
+}
+
+function buildMarkdownReport(
+  keyword: string,
+  customs: CustomsResult | null,
+  data1688: Result1688 | null,
+  shopee: ShopeeResult | null,
+  profit: ProfitAnalysis | null,
+): string {
+  const now = new Date().toISOString().slice(0, 10)
+  const growthEmoji = !customs ? '❓' : customs.avgGrowth > 30 ? '🔥' : customs.avgGrowth > 10 ? '⚡' : customs.avgGrowth > 0 ? '➡️' : '⚠️'
+  const competitionEmoji = !shopee ? '❓' : shopee.competitionLevel === 'low' ? '🟢' : shopee.competitionLevel === 'medium' ? '🟡' : '🔴'
+
+  return [
+    `# ${keyword} 越南市场交叉分析报告`,
+    `> 生成时间：${now}`,
+    '',
+    '## 一、海关出口趋势',
+    customs ? [
+      `- 近12个月出口总额：¥${(customs.totalExport / 10000).toFixed(1)}万`,
+      `- 同比增长：${customs.avgGrowth > 0 ? '+' : ''}${customs.avgGrowth.toFixed(1)}%`,
+      `- 主要出口省份：${customs.topProvinces.slice(0, 3).map((p) => `${p.name}(${(p.share * 100).toFixed(0)}%)`).join('、')}`,
+      `- 机会评级：${growthEmoji} ${customs.rating === 'blue_ocean' ? '蓝海' : customs.rating === 'growing' ? '增长' : customs.rating === 'stable' ? '平稳' : '下滑'}`,
+    ].join('\n') : '- 暂无海关数据',
+    '',
+    '## 二、1688 采购成本',
+    data1688 ? [
+      `- 价格区间：¥${data1688.priceRange.min.toFixed(0)} - ¥${data1688.priceRange.max.toFixed(0)}`,
+      `- 中位数出厂价：¥${data1688.priceMedian.toFixed(0)}`,
+      `- 搜索结果数：${data1688.totalResults} 件`,
+      data1688.products.length > 0 ? `- 主要供应商区域：${[...new Set(data1688.products.slice(0, 5).map((p) => p.supplierRegion).filter(Boolean))].join('、') || '暂无'}` : '',
+    ].join('\n') : '- 暂无1688数据',
+    '',
+    '## 三、越南 Shopee 市场',
+    shopee ? [
+      `- 在售商品数：${shopee.totalListings} 件`,
+      `- 售价区间：¥${shopee.priceRangeCny.min.toFixed(0)} - ¥${shopee.priceRangeCny.max.toFixed(0)}`,
+      `- 卖家数量：${shopee.sellerCount} 家`,
+      `- 竞争度评级：${competitionEmoji} ${shopee.competitionLevel === 'low' ? '低' : shopee.competitionLevel === 'medium' ? '中' : '高'}`,
+      `- 需求趋势：${shopee.demandTrend === 'accelerating' ? '↗️加速' : shopee.demandTrend === 'stable' ? '➡️平稳' : '↘️放缓'}`,
+      `- 近30天评价增速：${shopee.avgReviewVelocity.toFixed(1)}%`,
+      `- 新卖家占比（近3个月）：${(shopee.newSellerRatio * 100).toFixed(0)}%`,
+    ].join('\n') : '- 暂无Shopee数据',
+    '',
+    '## 四、利润测算',
+    profit ? [
+      `- 单品采购成本：¥${profit.costPrice.toFixed(0)}`,
+      `- 预估运费+关税：¥${(profit.freightCost + profit.tariffCost).toFixed(0)}`,
+      `- Shopee 中位售价：¥${profit.shopeePrice.toFixed(0)}`,
+      `- 预估毛利率：${profit.grossMargin.toFixed(1)}%`,
+      `- 利润评级：${profit.rating === 'high' ? '🟢高利润' : profit.rating === 'medium' ? '🟡中等' : '🔴低利润'}`,
+    ].join('\n') : '- 暂无利润数据',
+    '',
+    '## 五、综合结论',
+    generateReportConclusion(customs, data1688, shopee, profit),
+  ].join('\n')
+}
+
+function generateReportConclusion(
+  customs: CustomsResult | null,
+  data1688: Result1688 | null,
+  shopee: ShopeeResult | null,
+  profit: ProfitAnalysis | null,
+): string {
+  const points: string[] = []
+  if (customs) {
+    if (customs.avgGrowth > 30) points.push('海关出口增速强劲，属于快速增长品类')
+    else if (customs.avgGrowth > 0) points.push('海关出口平稳增长，市场有基础需求')
+    else points.push('海关出口呈下降趋势，需谨慎评估')
+  }
+  if (shopee) {
+    if (shopee.competitionLevel === 'low') points.push('越南市场卖家少、竞争度低，属于蓝海机会')
+    else if (shopee.competitionLevel === 'medium') points.push('市场竞争适中，仍有切入空间')
+    else points.push('市场竞争激烈，需差异化策略')
+    if (shopee.demandTrend === 'accelerating') points.push('消费者需求正在加速增长')
+  }
+  if (profit) {
+    if (profit.grossMargin > 40) points.push(`毛利率${profit.grossMargin.toFixed(0)}%，利润空间充裕`)
+    else if (profit.grossMargin > 20) points.push(`毛利率${profit.grossMargin.toFixed(0)}%，利润空间合理`)
+    else points.push('毛利率偏低，需优化采购或物流成本')
+  }
+  return points.length > 0 ? points.map((p) => `- ${p}`).join('\n') : '- 数据不足，建议补充更多信息后再分析'
 }
 
 // ---- 1688 Search (Mode B: background worker fetch) ----
@@ -362,7 +503,7 @@ function parsePriceFromContext(context: string): { priceMin: number; priceMax: n
 }
 
 // ---- Shopee VN Search (Mode B: background worker fetch via public API) ----
-async function fetchShopeeSearch(keywordVi: string) {
+async function fetchShopeeSearch(keywordVi: string, exchangeRate = 3500) {
   // Shopee's public search API — no auth required for basic queries
   // The API has rate limiting; we handle 429 gracefully
   const apiUrl = new URL('https://shopee.vn/api/v4/search/search_items')
@@ -395,23 +536,22 @@ async function fetchShopeeSearch(keywordVi: string) {
         },
       })
       if (!retryResp.ok) return null
-      return parseShopeeApiResponse(await retryResp.json(), keywordVi)
+      return parseShopeeApiResponse(await retryResp.json(), keywordVi, exchangeRate)
     }
 
     if (!resp.ok) return null
 
     const data = await resp.json()
-    return parseShopeeApiResponse(data, keywordVi)
+    return parseShopeeApiResponse(data, keywordVi, exchangeRate)
   } catch {
     return null
   }
 }
 
-function parseShopeeApiResponse(data: Record<string, unknown>, keywordVi: string) {
+function parseShopeeApiResponse(data: Record<string, unknown>, keywordVi: string, exchangeRate: number) {
   const items = (data?.items as Array<Record<string, unknown>>) || []
   if (items.length === 0) return null
 
-  const exchangeRate = 3500
   const products = items.map((item) => {
     const itemBasic = item?.item_basic as Record<string, unknown> | undefined
     const price = (itemBasic?.price as number) || 0

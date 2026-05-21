@@ -9,6 +9,8 @@
     "build:chrome": "vite build && node scripts/build-entries.mjs chrome && node scripts/postbuild.cjs chrome",
     "build:compat": "vite build --mode compat && node scripts/build-entries.mjs compat && node scripts/postbuild.cjs compat",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -35,6 +37,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.7"
   }
 }

@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { APP_NAME, APP_TAGLINE } from '../../shared/constants'
+import { useLicense } from '../hooks/useLicense'
 
 const features = [
   {
@@ -21,6 +23,15 @@ const features = [
 
 export default function WelcomePage() {
   const navigate = useNavigate()
+  const { isActivated, isExpired, loading } = useLicense()
+
+  useEffect(() => {
+    if (!loading && isActivated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [loading, isActivated, navigate])
+
+  if (loading) return null
 
   return (
     <div className="flex flex-col items-center px-8 py-10 h-full">
@@ -48,12 +59,19 @@ export default function WelcomePage() {
         ))}
       </div>
 
+      {isExpired && (
+        <div className="w-full bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 rounded-xl p-3 mb-4 text-center">
+          <p className="text-xs text-[#FF6B6B] mb-1">激活码已过期</p>
+          <p className="text-[10px] text-[#64748B]">请重新激活以继续使用</p>
+        </div>
+      )}
+
       {/* CTA */}
       <button
         onClick={() => navigate('/activate')}
         className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00D4AA] to-[#0ea878] text-white font-semibold text-sm hover:shadow-lg hover:shadow-[#00D4AA]/30 transition-all active:scale-[0.98]"
       >
-        开始使用
+        {isExpired ? '重新激活' : '开始使用'}
       </button>
 
       <p className="text-[10px] text-[#475569] mt-4">v1.0.0 · 面向跨境电商卖家的专业选品工具</p>

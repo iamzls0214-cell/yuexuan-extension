@@ -9,6 +9,7 @@ import ReportGenerator from '../components/ReportGenerator'
 import ReportsList from '../components/ReportsList'
 import Toast from '../components/Toast'
 import { useAggregatedData } from '../hooks/useAggregatedData'
+import { useLicense } from '../hooks/useLicense'
 import { browser } from '../../shared/browser-polyfill'
 import { STORAGE_KEYS } from '../../shared/constants'
 import type { Report } from '../../shared/types'
@@ -16,17 +17,23 @@ import type { Report } from '../../shared/types'
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { loading, error, result, search, clear } = useAggregatedData()
+  const { isActivated, loading: licenseLoading } = useLicense()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [showReports, setShowReports] = useState(false)
 
   useEffect(() => {
+    if (licenseLoading) return
+    if (!isActivated) {
+      navigate('/activate', { replace: true })
+      return
+    }
     browser.storage.local.get(STORAGE_KEYS.UI).then((r) => {
       const ui = r[STORAGE_KEYS.UI] as { onboardingCompleted?: boolean } | undefined
       if (!ui?.onboardingCompleted) {
         navigate('/onboarding')
       }
     })
-  }, [navigate])
+  }, [navigate, isActivated, licenseLoading])
 
   const handleSearch = async (keyword: string) => {
     await search(keyword)

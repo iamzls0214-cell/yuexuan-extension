@@ -9,14 +9,21 @@ export function useLicense() {
 
   useEffect(() => {
     browser.storage.local.get(STORAGE_KEYS.LICENSE).then((result) => {
-      if (result[STORAGE_KEYS.LICENSE]) {
-        setLicense(result[STORAGE_KEYS.LICENSE] as License)
+      const stored = result[STORAGE_KEYS.LICENSE] as License | undefined
+      if (stored) {
+        // Check expiration
+        if (stored.expiresAt && Date.now() > stored.expiresAt) {
+          setLicense({ ...stored, _expired: true } as License)
+        } else {
+          setLicense(stored)
+        }
       }
       setLoading(false)
     })
   }, [])
 
-  const isActivated = !!license
+  const isActivated = !!license && !(license as License & { _expired?: boolean })._expired
+  const isExpired = !!(license as License & { _expired?: boolean })?._expired
 
-  return { license, isActivated, loading }
+  return { license, isActivated, isExpired, loading }
 }

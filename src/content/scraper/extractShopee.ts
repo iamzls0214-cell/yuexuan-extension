@@ -16,12 +16,12 @@ export interface ExtractedShopeeProduct {
   imageUrl?: string
 }
 
-const EXCHANGE_RATE = 3500
+const DEFAULT_EXCHANGE_RATE = 3500
 
 /**
  * Extract product data from a Shopee VN product detail page.
  */
-export function extractDetailPage(): ExtractedShopeeProduct | null {
+export function extractDetailPage(exchangeRate = DEFAULT_EXCHANGE_RATE): ExtractedShopeeProduct | null {
   // Title
   const titleSelectors = ['.attM6y', '[data-testid="title"]', 'h1', '.product-title']
   const title = findText(titleSelectors)
@@ -66,7 +66,7 @@ export function extractDetailPage(): ExtractedShopeeProduct | null {
   return {
     title,
     priceVnd,
-    priceCny: Math.round((priceVnd / EXCHANGE_RATE) * 100) / 100,
+    priceCny: Math.round((priceVnd / exchangeRate) * 100) / 100,
     soldCount,
     shopName,
     rating,
@@ -80,7 +80,7 @@ export function extractDetailPage(): ExtractedShopeeProduct | null {
 /**
  * Extract product list from Shopee VN search page.
  */
-export function extractSearchResults(): ExtractedShopeeProduct[] {
+export function extractSearchResults(exchangeRate = DEFAULT_EXCHANGE_RATE): ExtractedShopeeProduct[] {
   const items = document.querySelectorAll(
     '.shopee-search-item-result__item, .col-xs-2-4, [data-sqe="item"], .search-result-item',
   )
@@ -109,7 +109,7 @@ export function extractSearchResults(): ExtractedShopeeProduct[] {
     results.push({
       title,
       priceVnd,
-      priceCny: Math.round((priceVnd / EXCHANGE_RATE) * 100) / 100,
+      priceCny: Math.round((priceVnd / exchangeRate) * 100) / 100,
       soldCount,
       shopName: '',
       rating: 0,

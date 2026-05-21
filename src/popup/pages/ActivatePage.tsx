@@ -39,10 +39,12 @@ export default function ActivatePage() {
       } as ExtensionMessage)
 
       if (response.success) {
+        const ONE_YEAR = 365 * 24 * 60 * 60 * 1000
         await browser.storage.local.set({
           [STORAGE_KEYS.LICENSE]: {
             key,
             activatedAt: Date.now(),
+            expiresAt: Date.now() + ONE_YEAR,
           },
         })
         navigate('/onboarding')
