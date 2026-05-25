@@ -17,7 +17,7 @@ const features = [
   {
     icon: '🛒',
     title: 'Shopee市场洞察',
-    desc: '扫描越南Shopee热卖商品，分析竞争度、价格、需求趋势',
+    desc: '扫描东南亚各国Shopee热卖商品，分析竞争度、价格、需求趋势',
   },
 ]
 

@@ -22,6 +22,21 @@ export function formatVnd(amount: number): string {
   return `₫${amount.toLocaleString('vi-VN')}`
 }
 
+/**
+ * 通用货币格式化 — 根据国家代码选择合适的 symbol 和 locale。
+ */
+export function formatCurrency(amount: number, country: string): string {
+  const cfg: Record<string, { symbol: string; locale: string }> = {
+    VN: { symbol: '₫', locale: 'vi-VN' },
+    TH: { symbol: '฿', locale: 'th-TH' },
+    ID: { symbol: 'Rp', locale: 'id-ID' },
+    PH: { symbol: '₱', locale: 'en-PH' },
+  }
+  const c = cfg[country]
+  if (!c) return formatCny(amount)
+  return `${c.symbol}${amount.toLocaleString(c.locale)}`
+}
+
 /** 格式化百分比 */
 export function formatPercent(value: number): string {
   const sign = value > 0 ? '+' : ''

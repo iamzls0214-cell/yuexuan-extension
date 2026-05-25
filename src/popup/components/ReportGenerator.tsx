@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import type { SearchResult } from '../../shared/types'
+import type { ShopeeResult } from '../../shared/types'
+import { SHOPEE_COUNTRIES } from '../../shared/countries'
 import { formatCny, formatPercent, generateId } from '../../shared/utils'
 import { browser } from '../../shared/browser-polyfill'
 import { STORAGE_KEYS } from '../../shared/constants'
 
 interface Props {
   keyword: string
-  searchResult: SearchResult | null
+  searchResult: { keyword: string; customs?: unknown; result1688?: unknown; shopee?: unknown; shopees?: ShopeeResult[]; profit?: unknown; [key: string]: unknown } | null
 }
 
 const opportunityLabels: Record<string, string> = {
@@ -22,35 +23,47 @@ export default function ReportGenerator({ keyword, searchResult }: Props) {
 
   if (!searchResult) return null
 
-  const { customs, result1688, shopee, profit } = searchResult
+  const { customs, result1688, shopee, shopees, profit } = searchResult
+  const shopeeList: ShopeeResult[] = (shopees as ShopeeResult[])?.length
+    ? shopees as ShopeeResult[]
+    : (shopee as ShopeeResult) ? [shopee as ShopeeResult] : []
 
-  const report = `# ${keyword} 越南市场交叉分析报告
+  const shopeeBlocks = shopeeList.map((s) => {
+    const cfg = SHOPEE_COUNTRIES[s.country]
+    const compEmoji = s.competitionLevel === 'low' ? '🟢低' : s.competitionLevel === 'medium' ? '🟡中' : '🔴高'
+    const trendEmoji = s.demandTrend === 'accelerating' ? '↗️加速' : s.demandTrend === 'stable' ? '➡️平稳' : '↘️放缓'
+    return `### ${cfg?.flag || ''} ${cfg?.name || s.country}
+- 在售商品数：${s.totalListings} 件
+- 售价区间：${formatCny(s.priceRangeCny.min)} - ${formatCny(s.priceRangeCny.max)}
+- 卖家数量：${s.sellerCount} 家
+- 竞争度评级：${compEmoji}
+- 需求趋势：${trendEmoji}
+- 新卖家占比（近3个月）：${((s.newSellerRatio || 0) * 100).toFixed(0)}%`
+  }).join('\n\n')
+
+  const report = `# ${keyword} 东南亚市场交叉分析报告
 > 生成时间：${new Date().toLocaleString('zh-CN')}
 
 ## 一、海关出口趋势
-- 近12个月出口总额：¥${customs?.totalExport ?? '-'}万
-- 同比增长：${customs ? formatPercent(customs.avgGrowth) : '-'}
-- 主要出口省份：${customs?.topProvinces.map((p) => `${p.name}(${p.share}%)`).join('、') ?? '-'}
-- 机会评级：${customs ? opportunityLabels[customs.rating] : '-'}
+- 近12个月出口总额：¥${(customs as { totalExport?: number })?.totalExport ?? '-'}万
+- 同比增长：${(customs as { avgGrowth?: number })?.avgGrowth != null ? formatPercent((customs as { avgGrowth: number }).avgGrowth) : '-'}
+- 主要出口省份：${(customs as { topProvinces?: Array<{ name: string; share: number }> })?.topProvinces?.map((p) => `${p.name}(${p.share}%)`).join('、') ?? '-'}
+- 机会评级：${(customs as { rating?: string })?.rating ? opportunityLabels[(customs as { rating: string }).rating] : '-'}
 
 ## 二、1688 采购成本
-- 价格区间：${result1688 ? formatCny(result1688.priceRange.min) + ' - ' + formatCny(result1688.priceRange.max) : '-'}
-- 中位数出厂价：${result1688 ? formatCny(result1688.priceMedian) : '-'}
-- 主要供应商区域：${result1688 ? [...new Set(result1688.products.map((p) => p.supplierRegion))].join('、') : '-'}
+- 价格区间：${(result1688 as { priceRange?: { min: number; max: number } })?.priceRange ? formatCny((result1688 as { priceRange: { min: number; max: number } }).priceRange.min) + ' - ' + formatCny((result1688 as { priceRange: { min: number; max: number } }).priceRange.max) : '-'}
+- 中位数出厂价：${(result1688 as { priceMedian?: number })?.priceMedian != null ? formatCny((result1688 as { priceMedian: number }).priceMedian) : '-'}
+- 主要供应商区域：${(result1688 as { products?: Array<{ supplierRegion: string }> })?.products ? [...new Set((result1688 as { products: Array<{ supplierRegion: string }> }).products.map((p) => p.supplierRegion))].join('、') : '-'}
 
-## 三、越南 Shopee 市场
-- 在售商品数：${shopee?.totalListings ?? '-'} 件
-- 售价区间：${shopee ? formatCny(shopee.priceRangeCny.min) + ' - ' + formatCny(shopee.priceRangeCny.max) : '-'}
-- 卖家数量：${shopee?.sellerCount ?? '-'} 家
-- 竞争度评级：${shopee ? (shopee.competitionLevel === 'low' ? '🟢低' : shopee.competitionLevel === 'medium' ? '🟡中' : '🔴高') : '-'}
-- 需求趋势：${shopee ? (shopee.demandTrend === 'accelerating' ? '↗️加速' : shopee.demandTrend === 'stable' ? '➡️平稳' : '↘️放缓') : '-'}
+## 三、Shopee 各国市场
+${shopeeBlocks || '- 暂无Shopee数据'}
 
 ## 四、利润测算
-- 单品采购成本：${profit ? formatCny(profit.costPrice) : '-'}
-- 预估运费+关税：${profit ? formatCny(profit.freightCost + profit.tariffCost) : '-'}
-- 总成本：${profit ? formatCny(profit.totalCost) : '-'}
-- Shopee 中位售价：${profit ? formatCny(profit.shopeePrice) : '-'}
-- 预估毛利率：${profit ? formatPercent(profit.grossMargin) : '-'}
+- 单品采购成本：${(profit as { costPrice?: number })?.costPrice != null ? formatCny((profit as { costPrice: number }).costPrice) : '-'}
+- 预估运费+关税：${(profit as { freightCost?: number; tariffCost?: number })?.freightCost != null && (profit as { tariffCost: number }).tariffCost != null ? formatCny((profit as { freightCost: number }).freightCost + (profit as { tariffCost: number }).tariffCost) : '-'}
+- 总成本：${(profit as { totalCost?: number })?.totalCost != null ? formatCny((profit as { totalCost: number }).totalCost) : '-'}
+- Shopee 中位售价：${(profit as { shopeePrice?: number })?.shopeePrice != null ? formatCny((profit as { shopeePrice: number }).shopeePrice) : '-'}
+- 预估毛利率：${(profit as { grossMargin?: number })?.grossMargin != null ? formatPercent((profit as { grossMargin: number }).grossMargin) : '-'}
 
 ## 五、综合结论
 - ${generateConclusion(searchResult)}
@@ -67,7 +80,7 @@ export default function ReportGenerator({ keyword, searchResult }: Props) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${keyword}_越南市场分析_${new Date().toISOString().slice(0, 10)}.md`
+    a.download = `${keyword}_东南亚市场分析_${new Date().toISOString().slice(0, 10)}.md`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -118,27 +131,31 @@ export default function ReportGenerator({ keyword, searchResult }: Props) {
   )
 }
 
-function generateConclusion(result: SearchResult): string {
+function generateConclusion(result: { customs?: unknown; shopee?: unknown; shopees?: ShopeeResult[]; profit?: unknown }): string {
   const parts: string[] = []
-  const { customs, shopee, profit } = result
+  const { customs, shopee, shopees, profit } = result
+  const c = customs as { avgGrowth?: number } | undefined
+  const p = profit as { grossMargin?: number } | undefined
+  const s = (shopees?.[0] || shopee) as ShopeeResult | undefined
 
-  if (customs && customs.avgGrowth > 30) {
-    parts.push(`该品类对越出口增速高达${formatPercent(customs.avgGrowth)}，处于快速放量阶段，值得重点关注。`)
-  } else if (customs && customs.avgGrowth > 0) {
-    parts.push(`该品类对越出口保持正增长（${formatPercent(customs.avgGrowth)}），市场稳定。`)
+  if (c && c.avgGrowth != null && c.avgGrowth > 30) {
+    parts.push(`该品类对东南亚出口增速高达${formatPercent(c.avgGrowth)}，处于快速放量阶段，值得重点关注。`)
+  } else if (c && c.avgGrowth != null && c.avgGrowth > 0) {
+    parts.push(`该品类对东南亚出口保持正增长（${formatPercent(c.avgGrowth)}），市场稳定。`)
   }
 
-  if (shopee && shopee.competitionLevel === 'low' && shopee.demandTrend === 'accelerating') {
-    parts.push(`越南Shopee卖家仅${shopee.sellerCount}家且需求在加速，属于低竞争的蓝海窗口期。`)
-  } else if (shopee && shopee.competitionLevel === 'high') {
-    parts.push(`越南市场竞争激烈（${shopee.sellerCount}家卖家），需差异化或价格优势切入。`)
+  if (s && s.competitionLevel === 'low' && s.demandTrend === 'accelerating') {
+    const cfg = SHOPEE_COUNTRIES[s.country]
+    parts.push(`${cfg?.name || s.country}Shopee卖家仅${s.sellerCount}家且需求在加速，属于低竞争的蓝海窗口期。`)
+  } else if (s && s.competitionLevel === 'high') {
+    parts.push(`市场竞争激烈（${s.sellerCount}家卖家），需差异化或价格优势切入。`)
   }
 
-  if (profit && profit.grossMargin > 40) {
-    parts.push(`预估毛利率${formatPercent(profit.grossMargin)}，利润空间充足。`)
-  } else if (profit && profit.grossMargin < 0) {
+  if (p && p.grossMargin != null && p.grossMargin > 40) {
+    parts.push(`预估毛利率${formatPercent(p.grossMargin)}，利润空间充足。`)
+  } else if (p && p.grossMargin != null && p.grossMargin < 0) {
     parts.push(`当前价差倒挂，需优化供应链或提高售价。`)
   }
 
-  return parts.join('')
+  return parts.join('') || '数据不足，建议补充更多信息后再分析'
 }

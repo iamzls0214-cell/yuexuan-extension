@@ -8,6 +8,7 @@ import { MessageType } from '../shared/types'
 import { extractCategory } from '../shared/categories'
 import { extractCategoryFromViTitle } from '../shared/vn-translations'
 import { vndToCny } from '../shared/utils'
+import { getCountryByDomain } from '../shared/countries'
 
 const SIDEBAR_WIDTH = 380
 const OBSERVER_TIMEOUT = 8000
@@ -16,16 +17,24 @@ let sidebarRoot: ShadowRoot | null = null
 let sidebarVisible = true
 let exchangeRate = 3500
 
+function getExchangeRate(): number {
+  const cfg = getCountryByDomain(window.location.hostname)
+  return cfg?.exchangeRate || 3500
+}
+
 // ---- Init ----
 async function init() {
-  if (!window.location.hostname.includes('shopee.vn') && !window.location.hostname.includes('localhost')) return
+  const host = window.location.hostname
+  const isShopee = host.includes('shopee.vn') || host.includes('shopee.co.th') ||
+    host.includes('shopee.co.id') || host.includes('shopee.ph') || host.includes('localhost')
+  if (!isShopee) return
 
-  // Load exchange rate from settings
+  // Load exchange rate from settings or domain
   try {
     const stored = await browser.storage.local.get('settings')
     const settings = stored.settings as { exchangeRate?: number } | undefined
-    if (settings?.exchangeRate) exchangeRate = settings.exchangeRate
-  } catch { /* use default */ }
+    exchangeRate = settings?.exchangeRate || getExchangeRate()
+  } catch { exchangeRate = getExchangeRate() }
 
   // Wait for product data
   const product = await waitForProductData()

@@ -10,13 +10,17 @@ import type {
   ProfitAnalysis,
 } from '../../shared/types'
 import { MessageType } from '../../shared/types'
-import { calcGrossMargin, median } from '../../shared/utils'
+import { calcGrossMargin } from '../../shared/utils'
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from '../../shared/constants'
+
+export interface MultiSearchResult extends SearchResult {
+  shopees: ShopeeResult[]
+}
 
 interface AggregatedState {
   loading: boolean
   error: string | null
-  result: SearchResult | null
+  result: MultiSearchResult | null
 }
 
 export function useAggregatedData() {
@@ -30,7 +34,6 @@ export function useAggregatedData() {
     setState({ loading: true, error: null, result: null })
 
     try {
-      // Get settings for calculations
       const stored = await browser.storage.local.get(STORAGE_KEYS.SETTINGS)
       const settings = { ...DEFAULT_SETTINGS, ...(stored[STORAGE_KEYS.SETTINGS] || {}) }
 
@@ -48,29 +51,34 @@ export function useAggregatedData() {
         // Customs API may be unavailable — not fatal
       }
 
-      // 2. Fetch 1688 & Shopee via search keyword
+      // 2. Fetch 1688 & multi-country Shopee
       let result1688: Result1688 | null = null
-      let shopee: ShopeeResult | null = null
+      let shopees: ShopeeResult[] = []
 
       try {
         const searchResp: ExtensionResponse = await browser.runtime.sendMessage({
           type: MessageType.SEARCH_KEYWORD,
-          payload: { keyword },
+          payload: { keyword, countries: settings.enabledCountries },
         } as ExtensionMessage)
         if (searchResp.success) {
           const data = searchResp.data as {
             result1688: Result1688 | null
-            shopee: ShopeeResult | null
+            shopees?: ShopeeResult[]
+            shopee?: ShopeeResult
           }
           result1688 = data.result1688
-          shopee = data.shopee
+          // Handle both legacy (single shopee) and new (shopees array) formats
+          if (data.shopees?.length) {
+            shopees = data.shopees
+          } else if (data.shopee) {
+            shopees = [data.shopee]
+          }
         }
       } catch {
         // Search may fail — not fatal
       }
 
-      // If we have no data at all, it's an error
-      if (!customs && !result1688 && !shopee) {
+      if (!customs && !result1688 && shopees.length === 0) {
         setState({
           loading: false,
           error: '未获取到任何数据，请检查网络和 API 配置',
@@ -79,11 +87,12 @@ export function useAggregatedData() {
         return
       }
 
-      // 3. Calculate profit
+      // 3. Calculate profit (primary country = first in list)
+      const primaryShopee = shopees[0] || null
       let profit: ProfitAnalysis | null = null
-      if (result1688?.priceMedian && shopee?.priceMedianCny) {
+      if (result1688?.priceMedian && primaryShopee?.priceMedianCny) {
         const cost = result1688.priceMedian
-        const sell = shopee.priceMedianCny
+        const sell = primaryShopee.priceMedianCny
         const calc = calcGrossMargin(cost, sell, settings.freightCostPerKg, settings.tariffRate)
         profit = {
           costPrice: cost,
@@ -98,11 +107,12 @@ export function useAggregatedData() {
         }
       }
 
-      const result: SearchResult = {
+      const result: MultiSearchResult = {
         keyword,
         customs,
         result1688,
-        shopee,
+        shopee: primaryShopee,
+        shopees,
         profit,
         searchedAt: Date.now(),
       }

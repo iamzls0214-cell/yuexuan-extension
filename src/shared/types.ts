@@ -1,3 +1,5 @@
+import type { CountryCode } from './countries'
+
 // ---- 海关数据 ----
 export interface CustomsDataPoint {
   month: string
@@ -53,6 +55,7 @@ export interface ShopeeProduct {
 export interface ShopeeResult {
   keyword: string
   keywordVi: string
+  country: CountryCode
   products: ShopeeProduct[]
   priceRangeVnd: { min: number; max: number }
   priceRangeCny: { min: number; max: number }
@@ -100,7 +103,10 @@ export interface Report {
 export interface Settings {
   customsApiEndpoint: string
   customsApiKey: string
-  exchangeRate: number // 默认 3500 VND/CNY
+  apiServerUrl: string
+  serverApiKey: string
+  enabledCountries: CountryCode[]
+  exchangeRate: number
   freightCostPerKg: number
   tariffRate: number // 默认 0.1
   cacheTtlHours: number // 默认 24

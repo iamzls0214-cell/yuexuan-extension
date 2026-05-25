@@ -18,6 +18,9 @@ export const COLORS = {
 export const DEFAULT_SETTINGS = {
   customsApiEndpoint: 'https://api.customsdata.net/v1',
   customsApiKey: '',
+  apiServerUrl: '',
+  serverApiKey: '',
+  enabledCountries: ['VN'] as string[],
   exchangeRate: 3500,
   freightCostPerKg: 15,
   tariffRate: 0.1,
@@ -52,4 +55,4 @@ export const STORAGE_KEYS = {
 // Product name
 export const APP_NAME = '越海选品'
 export const APP_NAME_EN = 'YueXuan'
-export const APP_TAGLINE = '三源数据交叉分析，发现越南蓝海品类'
+export const APP_TAGLINE = '三源数据交叉分析，发现东南亚蓝海品类'

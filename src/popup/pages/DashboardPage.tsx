@@ -9,10 +9,13 @@ import ReportGenerator from '../components/ReportGenerator'
 import ReportsList from '../components/ReportsList'
 import Toast from '../components/Toast'
 import { useAggregatedData } from '../hooks/useAggregatedData'
+import type { MultiSearchResult } from '../hooks/useAggregatedData'
 import { useLicense } from '../hooks/useLicense'
 import { browser } from '../../shared/browser-polyfill'
 import { STORAGE_KEYS } from '../../shared/constants'
-import type { Report } from '../../shared/types'
+import type { Report, ShopeeResult } from '../../shared/types'
+import type { CountryCode } from '../../shared/countries'
+import { SHOPEE_COUNTRIES, ALL_COUNTRIES } from '../../shared/countries'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -20,6 +23,7 @@ export default function DashboardPage() {
   const { isActivated, loading: licenseLoading } = useLicense()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [showReports, setShowReports] = useState(false)
+  const [activeTab, setActiveTab] = useState<CountryCode>('VN')
 
   useEffect(() => {
     if (licenseLoading) return
@@ -134,14 +138,47 @@ export default function DashboardPage() {
         {/* Data */}
         {result && !loading && (
           <>
+            {/* Country tabs */}
+            {result.shopees && result.shopees.length > 1 && (
+              <div className="flex gap-1 bg-[#0F172A] rounded-lg p-1">
+                {result.shopees.map((s: ShopeeResult) => {
+                  const cfg = SHOPEE_COUNTRIES[s.country]
+                  return (
+                    <button
+                      key={s.country}
+                      onClick={() => setActiveTab(s.country)}
+                      className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        activeTab === s.country
+                          ? 'bg-[#00D4AA] text-white shadow-sm'
+                          : 'text-[#64748B] hover:text-[#F1F5F9]'
+                      }`}
+                    >
+                      {cfg?.flag} {cfg?.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             {result.customs && <CustomsCard data={result.customs} />}
             {result.result1688 && <Price1688Card data={result.result1688} />}
-            {result.shopee && <ShopeeCard data={result.shopee} />}
+
+            {/* Active tab's Shopee card */}
+            {result.shopees && (() => {
+              const active = result.shopees.find((s: ShopeeResult) => s.country === activeTab)
+                || result.shopees[0]
+              return <ShopeeCard data={active} />
+            })()}
+
+            {result.shopees && result.shopees.length === 0 && result.shopee && (
+              <ShopeeCard data={result.shopee} />
+            )}
+
             {result.profit && <ProfitAnalysis data={result.profit} />}
             <ReportGenerator keyword={result.keyword} searchResult={result} />
 
             {/* Partial data notice */}
-            {(!result.customs || !result.result1688 || !result.shopee) && (
+            {(!result.customs || !result.result1688 || !result.shopees?.length) && (
               <div className="bg-[#F59E0B]/10 border border-[#F59E0B]/20 rounded-xl p-3 text-[11px] text-[#F59E0B] text-center">
                 部分数据源暂不可用。已用可用数据生成分析。
                 {!result.customs && <span className="block mt-1 text-[10px] opacity-70">海关 API 未响应，请在设置中配置 API Key</span>}

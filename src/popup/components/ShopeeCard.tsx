@@ -1,5 +1,7 @@
 import type { ShopeeResult } from '../../shared/types'
-import { formatCny, formatVnd, formatPercent } from '../../shared/utils'
+import type { CountryCode } from '../../shared/countries'
+import { SHOPEE_COUNTRIES } from '../../shared/countries'
+import { formatCny, formatCurrency } from '../../shared/utils'
 
 interface Props {
   data: ShopeeResult | null
@@ -17,23 +19,35 @@ const trendLabels: Record<string, { label: string; color: string }> = {
   slowing: { label: '↘️ 需求放缓', color: '#FF6B6B' },
 }
 
+function getCountryInfo(country: CountryCode) {
+  const cfg = SHOPEE_COUNTRIES[country]
+  return {
+    flag: cfg?.flag || '',
+    name: cfg?.name || country,
+    currencySymbol: cfg?.currencySymbol || '',
+  }
+}
+
 export default function ShopeeCard({ data }: Props) {
   if (!data) {
     return (
       <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-4 text-center text-xs text-[#64748B]">
         <span className="text-2xl block mb-1">🛒</span>
-        暂无 Shopee 越南数据
+        暂无 Shopee 数据
       </div>
     )
   }
 
+  const country = getCountryInfo(data.country)
   const comp = competitionLabels[data.competitionLevel]
   const trend = trendLabels[data.demandTrend]
 
   return (
     <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-4 hover:border-[#334155]/80 transition-colors">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-[#F1F5F9]">Shopee 越南行情</h3>
+        <h3 className="text-sm font-semibold text-[#F1F5F9]">
+          {country.flag} Shopee {country.name}
+        </h3>
         <span className="text-[10px] text-[#64748B]">
           {data.keywordVi}
         </span>

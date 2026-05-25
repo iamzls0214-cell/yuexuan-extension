@@ -3,7 +3,9 @@
  * and testing when live APIs are unavailable.
  */
 import type { SearchResult, CustomsResult, Result1688, ShopeeResult, ProfitAnalysis } from '../shared/types'
-import { translateToVietnamese } from '../shared/vn-translations'
+import type { CountryCode } from '../shared/countries'
+import { SHOPEE_COUNTRIES } from '../shared/countries'
+import { translateKeyword } from '../shared/translations'
 import { calcGrossMargin } from '../shared/utils'
 
 const SAMPLE_PROVINCES = ['浙江', '广东', '福建', '江苏', '山东', '上海', '安徽']
@@ -11,12 +13,13 @@ const SAMPLE_1688_SUPPLIERS = [
   '义乌市创亿电子商务有限公司', '深圳市华强电子科技有限公司', '广州市白云区皮具厂',
   '东莞市中堂玩具厂', '潮州市潮安区陶瓷厂', '深圳市龙岗区数码配件厂',
 ]
-const SAMPLE_SHOPEE_SHOPS = [
-  'ShopMall.VN', 'DealSốc', 'GiáTốt24h', 'HàngChínhHiệu',
-  'MuaSắmOnline', 'TechZone.VN', 'PhụKiệnSố1',
-]
+const SAMPLE_SHOPS: Record<string, string[]> = {
+  VN: ['ShopMall.VN', 'DealSốc', 'GiáTốt24h', 'HàngChínhHiệu', 'MuaSắmOnline', 'TechZone.VN', 'PhụKiệnSố1'],
+  TH: ['ShopMall.TH', 'DealDee', 'ราคาถูก', 'ของแท้100', 'ช้อปออนไลน์', 'TechZone.TH', 'GadgetThai'],
+  ID: ['ShopMall.ID', 'DiskonHebat', 'HargaMurah', 'Asli100', 'BelanjaOnline', 'TechZone.ID', 'GadgetID'],
+  PH: ['ShopMall.PH', 'SulitShoppe', 'MuraNa', 'Legit100', 'OnlineShop.PH', 'TechZone.PH', 'GadgetPH'],
+}
 
-// Pseudo-random but deterministic based on keyword
 function seedFromKeyword(kw: string): number {
   let h = 0
   for (let i = 0; i < kw.length; i++) {
@@ -40,20 +43,22 @@ function randomRange(seed: number, index: number, min: number, max: number, deci
   return Math.round(val)
 }
 
-export function generateMockSearchResult(keyword: string): SearchResult {
+export function generateMockSearchResult(keyword: string, country: CountryCode = 'VN'): SearchResult {
   const seed = seedFromKeyword(keyword)
-  const keywordVi = translateToVietnamese(keyword)
+  const keywordVi = translateKeyword(keyword, country)
+  const cfg = SHOPEE_COUNTRIES[country]
+  const exchangeRate = cfg?.exchangeRate || 3500
 
   const customs: CustomsResult = generateMockCustoms(keyword, seed)
   const result1688: Result1688 = generateMock1688(keyword, seed)
-  const shopee: ShopeeResult = generateMockShopee(keyword, keywordVi, seed)
+  const shopee: ShopeeResult = generateMockShopee(keyword, keywordVi, seed, country, exchangeRate)
 
   let profit: ProfitAnalysis | null = null
   if (result1688.priceMedian > 0 && shopee.priceMedianCny > 0) {
     const calc = calcGrossMargin(result1688.priceMedian, shopee.priceMedianCny, 15, 0.1)
     profit = {
       costPrice: result1688.priceMedian,
-      exchangeRate: 3500,
+      exchangeRate,
       freightCost: 15,
       tariffCost: result1688.priceMedian * 0.1,
       totalCost: calc.totalCost,
@@ -128,22 +133,24 @@ function generateMock1688(keyword: string, seed: number): Result1688 {
   }
 }
 
-function generateMockShopee(keyword: string, keywordVi: string, seed: number): ShopeeResult {
-  const exchangeRate = 3500
+function generateMockShopee(keyword: string, keywordLocal: string, seed: number, country: CountryCode, exchangeRate: number): ShopeeResult {
+  const cfg = SHOPEE_COUNTRIES[country]
+  const domain = cfg?.domain || 'shopee.vn'
+  const shops = SAMPLE_SHOPS[country] || SAMPLE_SHOPS.VN
   const productCount = randomRange(seed, 2, 8, 25)
   const sellerCount = randomRange(seed, 3, 5, productCount)
   const products = Array.from({ length: Math.min(productCount, 20) }, (_, i) => {
-    const priceVnd = randomRange(seed, i + 10, 50000, 500000)
+    const priceLocal = randomRange(seed, i + 10, 50000, 500000)
     return {
-      title: `${keywordVi} ${['cao cấp', 'giá tốt', 'chính hãng', 'mới', 'hot'][i % 5]}`,
-      priceVnd,
-      priceCny: Math.round((priceVnd / exchangeRate) * 100) / 100,
+      title: `${keywordLocal} ${['cao cấp', 'giá tốt', 'chính hãng', 'mới', 'hot'][i % 5]}`,
+      priceVnd: priceLocal,
+      priceCny: Math.round((priceLocal / exchangeRate) * 100) / 100,
       soldCount: randomRange(seed, i + 20, 50, 3000),
-      shopName: pickRandom(SAMPLE_SHOPEE_SHOPS, seed, i),
+      shopName: pickRandom(shops, seed, i),
       rating: randomRange(seed, i + 30, 35, 50, 1) / 10,
       reviewCount: randomRange(seed, i + 40, 10, 500),
       listedDays: randomRange(seed, i + 50, 5, 400),
-      url: `https://shopee.vn/product/${randomRange(seed, i + 60, 10000, 99999)}/${randomRange(seed, i + 70, 10000000, 99999999)}`,
+      url: `https://${domain}/product/${randomRange(seed, i + 60, 10000, 99999)}/${randomRange(seed, i + 70, 10000000, 99999999)}`,
     }
   })
 
@@ -156,8 +163,9 @@ function generateMockShopee(keyword: string, keywordVi: string, seed: number): S
     : 0
 
   return {
-    keyword: keywordVi,
-    keywordVi,
+    keyword: keywordLocal,
+    keywordVi: keywordLocal,
+    country,
     products,
     priceRangeVnd: { min: Math.min(...pricesVnd), max: Math.max(...pricesVnd) },
     priceRangeCny: { min: Math.min(...pricesCny), max: Math.max(...pricesCny) },

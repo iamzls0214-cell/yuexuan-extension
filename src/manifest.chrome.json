@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "越海选品",
   "version": "1.0.0",
-  "description": "三源数据交叉分析，发现越南蓝海品类 — 中国海关数据 + 1688出厂价 + Shopee越南行情",
+  "description": "三源数据交叉分析，发现东南亚蓝海品类 — 中国海关数据 + 1688出厂价 + Shopee多国行情",
   "minimum_chrome_version": "86",
   "icons": {
     "16": "assets/icon-16.png",
@@ -27,7 +27,13 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://*.shopee.vn/*", "http://localhost:*/*shopee*"],
+      "matches": [
+        "https://*.shopee.vn/*",
+        "https://*.shopee.co.th/*",
+        "https://*.shopee.co.id/*",
+        "https://*.shopee.ph/*",
+        "http://localhost:*/*shopee*"
+      ],
       "js": ["content/shopee.js"],
       "run_at": "document_idle"
     }
@@ -36,12 +42,21 @@
   "host_permissions": [
     "https://*.1688.com/*",
     "https://*.shopee.vn/*",
+    "https://*.shopee.co.th/*",
+    "https://*.shopee.co.id/*",
+    "https://*.shopee.ph/*",
     "https://api.customsdata.net/*"
   ],
   "web_accessible_resources": [
     {
       "resources": ["assets/*"],
-      "matches": ["https://*.1688.com/*", "https://*.shopee.vn/*"]
+      "matches": [
+        "https://*.1688.com/*",
+        "https://*.shopee.vn/*",
+        "https://*.shopee.co.th/*",
+        "https://*.shopee.co.id/*",
+        "https://*.shopee.ph/*"
+      ]
     }
   ]
 }
