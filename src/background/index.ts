@@ -9,17 +9,39 @@ import { getCache, setCache } from './cache'
 import { generateMockSearchResult } from './mock-data'
 import { SHOPEE_COUNTRIES, type CountryCode, ALL_COUNTRIES } from '../shared/countries'
 
-// ---- Server URL ----
-let cachedServerUrl = ''
-let cachedServerKey = ''
+// ---- UA Pool & rate limiting ----
+const UA_POOL = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+]
+let uaIdx = 0
+function nextUA(): string {
+  const ua = UA_POOL[uaIdx % UA_POOL.length]
+  uaIdx++
+  return ua
+}
 
-async function getServerConfig(): Promise<{ url: string; key: string }> {
-  if (cachedServerUrl) return { url: cachedServerUrl, key: cachedServerKey }
-  const stored = await browser.storage.local.get('settings')
-  const s = stored.settings as { apiServerUrl?: string; serverApiKey?: string } | undefined
-  cachedServerUrl = s?.apiServerUrl || ''
-  cachedServerKey = s?.serverApiKey || ''
-  return { url: cachedServerUrl, key: cachedServerKey }
+function throttleDelay(): Promise<void> {
+  const ms = 1000 + Math.random() * 2000 // 1-3s jittered delay between requests
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+// Run fetchers sequentially with a throttle gap between each
+async function staggeredFetchers<T>(fetchers: Array<() => Promise<T | null>>): Promise<Array<{ status: 'fulfilled'; value: T | null } | { status: 'rejected'; reason: unknown }>> {
+  const results: Array<{ status: 'fulfilled'; value: T | null } | { status: 'rejected'; reason: unknown }> = []
+  for (let i = 0; i < fetchers.length; i++) {
+    if (i > 0) await throttleDelay()
+    try {
+      results.push({ status: 'fulfilled', value: await fetchers[i]() })
+    } catch (err) {
+      results.push({ status: 'rejected', reason: err })
+    }
+  }
+  return results
 }
 
 // ---- Message Router ----
@@ -122,18 +144,18 @@ async function handleSearchKeyword(payload: { keyword: string; countries?: Count
       } catch { /* fall through to direct */ }
     }
 
-    // Direct fetch: 1688 + multi-country Shopee
-    const [result1688, ...shopeeResults] = await Promise.allSettled([
-      fetch1688Search(keyword),
+    // Direct fetch: sequential with throttle gaps to avoid rate-limiting
+    const searchResults = await staggeredFetchers([
+      () => fetch1688Search(keyword),
       ...countries.map((c) => {
         const vi = translateKeyword(keyword, c)
         const exRate = SHOPEE_COUNTRIES[c]?.exchangeRate || 3500
-        return fetchShopeeSearch(vi, exRate, c)
+        return () => fetchShopeeSearch(vi, exRate, c)
       }),
     ])
 
-    const real1688 = result1688.status === 'fulfilled' ? result1688.value : null
-    const realShopees = shopeeResults
+    const real1688 = searchResults[0]?.status === 'fulfilled' ? searchResults[0].value : null
+    const realShopees = searchResults.slice(1)
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter(Boolean) as ShopeeResult[]
 
@@ -201,31 +223,33 @@ async function handleGenerateReport(payload: { keyword: string; countries?: Coun
       } catch { /* fall through */ }
     }
 
-    // Direct: fetch and build report
+    // Direct: fetch sequentially with throttle gaps
     const keywordVi = translateKeyword(keyword, countries[0])
-    const [customsResult, searchResult] = await Promise.allSettled([
-      (async () => {
-        if (settings?.customsApiKey) {
-          return fetchCustomsData(keyword, settings.customsApiEndpoint || 'https://api.customsdata.net/v1', settings.customsApiKey)
-        }
-        return generateMockSearchResult(keyword, 'VN').customs
-      })(),
-      Promise.allSettled([
-        fetch1688Search(keyword),
-        ...countries.map((c) => {
-          const vi = translateKeyword(keyword, c)
-          const rate = SHOPEE_COUNTRIES[c]?.exchangeRate || 3500
-          return fetchShopeeSearch(vi, rate, c)
-        }),
-      ]),
+
+    // Fetch customs (standalone, not throttled among itself)
+    let customs: CustomsResult | null = null
+    try {
+      if (settings?.customsApiKey) {
+        customs = await fetchCustomsData(keyword, settings.customsApiEndpoint || 'https://api.customsdata.net/v1', settings.customsApiKey)
+      } else {
+        customs = generateMockSearchResult(keyword, 'VN').customs
+      }
+    } catch { customs = null }
+
+    // Fetch 1688 + Shopee countries sequentially with throttle
+    const searchResults = await staggeredFetchers([
+      () => fetch1688Search(keyword),
+      ...countries.map((c) => {
+        const vi = translateKeyword(keyword, c)
+        const rate = SHOPEE_COUNTRIES[c]?.exchangeRate || 3500
+        return () => fetchShopeeSearch(vi, rate, c)
+      }),
     ])
 
-    const customs = customsResult.status === 'fulfilled' ? customsResult.value : null
-    const [r1688, ...rShopees] = searchResult.status === 'fulfilled' ? searchResult.value : [null]
-    const data1688 = r1688?.status === 'fulfilled' ? r1688.value : null
-    const shopees = rShopees
-      ?.filter((r: PromiseSettledResult<unknown>) => r.status === 'fulfilled')
-      .map((r: PromiseFulfilledResult<unknown>) => r.value as ShopeeResult) || []
+    const data1688 = searchResults[0]?.status === 'fulfilled' ? searchResults[0].value : null
+    const shopees = searchResults.slice(1)
+      .filter((r): r is { status: 'fulfilled'; value: ShopeeResult } => r.status === 'fulfilled' && r.value != null)
+      .map((r) => r.value)
 
     // Fallback to mock
     if (!customs && !data1688 && shopees.length === 0) {
@@ -376,7 +400,7 @@ async function fetch1688Search(keyword: string) {
   const url = `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(keyword)}`
   const resp = await fetch(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': nextUA(),
       'Accept': 'text/html,application/xhtml+xml',
       'Accept-Language': 'zh-CN,zh;q=0.9',
     },
@@ -607,7 +631,7 @@ async function fetchShopeeSearch(keywordLocal: string, exchangeRate: number, cou
   try {
     const resp = await fetch(apiUrl.toString(), {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': nextUA(),
         'Accept': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
         'X-Api-Source': 'rn-search',
@@ -618,7 +642,7 @@ async function fetchShopeeSearch(keywordLocal: string, exchangeRate: number, cou
       await new Promise((r) => setTimeout(r, 2000))
       const retryResp = await fetch(apiUrl.toString(), {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': nextUA(),
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
         },

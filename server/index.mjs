@@ -64,6 +64,42 @@ const TRANSLATIONS = {
   },
 }
 
+// ---- UA Pool (rotated per request) ----
+const UA_POOL = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+]
+let uaIndex = 0
+function rotatedUA() {
+  const ua = UA_POOL[uaIndex % UA_POOL.length]
+  uaIndex++
+  return ua
+}
+
+// ---- Rate limiting ----
+function delay(minMs = 1500, maxMs = 2500) {
+  const ms = minMs + Math.random() * (maxMs - minMs)
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+// Run fetchers sequentially with delays between each to avoid triggering rate limits
+async function sequentialWithDelay(fetchers) {
+  const results = []
+  for (let i = 0; i < fetchers.length; i++) {
+    if (i > 0) await delay()
+    try {
+      results.push({ status: 'fulfilled', value: await fetchers[i]() })
+    } catch (err) {
+      results.push({ status: 'rejected', reason: err })
+    }
+  }
+  return results
+}
+
 // ---- Cache (30 min TTL in memory) ----
 const cache = new Map()
 const CACHE_TTL = 30 * 60 * 1000
@@ -112,13 +148,13 @@ app.post('/api/search', auth, async (req, res) => {
   if (cached) return res.json({ ...cached, _cached: true })
 
   try {
-    const [result1688, ...shopeeResults] = await Promise.allSettled([
-      fetch1688(keyword),
-      ...countries.map((c) => fetchShopee(keyword, c)),
+    const results = await sequentialWithDelay([
+      () => fetch1688(keyword),
+      ...countries.map((c) => () => fetchShopee(keyword, c)),
     ])
 
-    const data1688 = result1688.status === 'fulfilled' ? result1688.value : null
-    const shopees = shopeeResults
+    const data1688 = results[0]?.status === 'fulfilled' ? results[0].value : null
+    const shopees = results.slice(1)
       .map((r) => r.status === 'fulfilled' ? r.value : null)
       .filter(Boolean)
 
@@ -136,13 +172,13 @@ app.post('/api/report', auth, async (req, res) => {
   if (!keyword) return res.status(400).json({ error: 'keyword required' })
 
   try {
-    const [result1688, ...shopeeResults] = await Promise.allSettled([
-      fetch1688(keyword),
-      ...countries.map((c) => fetchShopee(keyword, c)),
+    const results = await sequentialWithDelay([
+      () => fetch1688(keyword),
+      ...countries.map((c) => () => fetchShopee(keyword, c)),
     ])
 
-    const data1688 = result1688.status === 'fulfilled' ? result1688.value : null
-    const shopees = shopeeResults
+    const data1688 = results[0]?.status === 'fulfilled' ? results[0].value : null
+    const shopees = results.slice(1)
       .map((r) => r.status === 'fulfilled' ? r.value : null)
       .filter(Boolean)
 
@@ -166,7 +202,7 @@ async function fetch1688(keyword) {
   const url = `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(keyword)}`
   const resp = await fetch(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': rotatedUA(),
       'Accept': 'text/html,application/xhtml+xml',
       'Accept-Language': 'zh-CN,zh;q=0.9',
     },
@@ -268,7 +304,7 @@ async function fetchShopee(keyword, country) {
   try {
     const resp = await fetch(apiUrl.toString(), {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': rotatedUA(),
         'Accept': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
         'X-Api-Source': 'rn-search',
@@ -279,7 +315,7 @@ async function fetchShopee(keyword, country) {
       await new Promise((r) => setTimeout(r, 2000))
       const retry = await fetch(apiUrl.toString(), {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': rotatedUA(),
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
         },
