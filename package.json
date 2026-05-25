@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "build:customs-data": "node scripts/build-customs-data.mjs",
     "preview": "vite preview",
-    "server": "node server/index.mjs"
+    "server": "python3 server/server.py",
+    "server:node": "node server/index.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
