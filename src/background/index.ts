@@ -3,6 +3,7 @@ import type { ExtensionMessage, ExtensionResponse, CustomsResult, Result1688, Sh
 import { MessageType } from '../shared/types'
 import { verifyLicense } from './api/license'
 import { fetchCustomsData } from './api/customs'
+import { queryLocalCustoms } from '../data/customs-cache'
 import { translateToVietnamese } from '../shared/vn-translations'
 import { getCache, setCache } from './cache'
 import { generateMockSearchResult } from './mock-data'
@@ -59,7 +60,13 @@ async function handleFetchCustoms(payload: { keyword: string }): Promise<Extensi
       return { success: true, data }
     }
 
-    // Fallback: generate mock customs data
+    // Fallback 1: local crawl-china customs data
+    const localData = queryLocalCustoms(payload.keyword)
+    if (localData) {
+      return { success: true, data: localData, _source: 'crawl-china' }
+    }
+
+    // Fallback 2: generate mock customs data
     const mockResult = generateMockSearchResult(payload.keyword)
     return {
       success: true,
@@ -67,7 +74,12 @@ async function handleFetchCustoms(payload: { keyword: string }): Promise<Extensi
       _mock: true,
     }
   } catch (err) {
-    // Fallback to mock on error too
+    // Try local data first on error
+    const localData = queryLocalCustoms(payload.keyword)
+    if (localData) {
+      return { success: true, data: localData, _source: 'crawl-china' }
+    }
+    // Then mock
     try {
       const mockResult = generateMockSearchResult(payload.keyword)
       return { success: true, data: mockResult.customs, _mock: true }

@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "build:customs-data": "node scripts/build-customs-data.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
